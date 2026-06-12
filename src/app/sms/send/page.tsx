@@ -24,8 +24,20 @@ import { useApiMutation } from "@/lib/hooks/use-api";
 import { formatSmsCount } from "@/lib/utils";
 import { toast } from "sonner";
 
+// Server-side phone validation regex: ^\+?\d{3,20}$
+const PHONE_REGEX = /^\+?\d{3,20}$/;
+
+function validatePhoneNumbers(value: string): string | true {
+  if (!value.trim()) return "请输入至少一个手机号码";
+  const numbers = value.replace(/[\uff1b]/g, ";").replace(/[\uff0c]/g, ";").replace(/,/g, ";").split(";").filter(Boolean);
+  if (numbers.length === 0) return "请输入至少一个手机号码";
+  const invalid = numbers.filter(n => !PHONE_REGEX.test(n.trim()));
+  if (invalid.length > 0) return `无效的手机号码: ${invalid.join(", ")}（仅支持3-20位数字，可选+前缀）`;
+  return true;
+}
+
 const smsSchema = z.object({
-  phone_numbers: z.string().min(1, "请输入至少一个手机号码"),
+  phone_numbers: z.string().refine(validatePhoneNumbers, { message: "请输入有效的手机号码" }),
   msg_content: z
     .string()
     .min(1, "请输入短信内容")
@@ -61,15 +73,26 @@ function SmsSendContent() {
 
   const onSubmit = async (data: SmsForm) => {
     setSending(true);
+    // Normalize separators to match server expectation (;)
+    const normalizedNumbers = data.phone_numbers
+      .replace(/[\uff1b]/g, ";")
+      .replace(/[\uff0c]/g, ";")
+      .replace(/,/g, ";");
+    const requestBody = {
+      sim_slot: parseInt(data.sim_slot) as 1 | 2,
+      phone_numbers: normalizedNumbers,
+      msg_content: data.msg_content,
+    };
+    console.log("[SMS Send] Form data:", data);
+    console.log("[SMS Send] Request body:", requestBody);
     try {
-      await mutation("/sms/send", {
-        sim_slot: parseInt(data.sim_slot) as 1 | 2,
-        phone_numbers: data.phone_numbers,
-        msg_content: data.msg_content,
-      });
-      toast.success("短信发送成功！");
+      const result = await mutation("/sms/send", requestBody);
+      console.log("[SMS Send] Server response:", result);
+      // Note: Server returns "success" even if SMS fails at carrier level (fire-and-forget)
+      toast.success("短信发送指令已提交");
       router.push("/sms");
     } catch (error) {
+      console.error("[SMS Send] Error:", error);
       toast.error(error instanceof Error ? error.message : "发送短信失败");
     } finally {
       setSending(false);

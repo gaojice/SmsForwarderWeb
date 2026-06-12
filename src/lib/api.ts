@@ -33,12 +33,17 @@ export async function apiRequest<T = unknown>(
     sign,
   };
 
+  const url = `${serverUrl.replace(/\/$/, "")}${endpoint}`;
+
+  console.log("[SmsForwarder API] Request:", {
+    url,
+    body: JSON.parse(JSON.stringify(body)),
+  });
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const url = `${serverUrl.replace(/\/$/, "")}${endpoint}`;
-
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -55,6 +60,8 @@ export async function apiRequest<T = unknown>(
     }
 
     const result: ApiResponse<T> = await response.json();
+
+    console.log("[SmsForwarder API] Response:", result);
 
     if (result.code !== 200) {
       throw new ApiError(result.code, result.msg || "请求失败", endpoint);
